@@ -1,0 +1,144 @@
+def sim_rally_PB_game(p_win_A, p_win_B, score_to_win, n_rallys=100, freeze=False ):
+  """
+  here's the docstring
+  rally scoring (not traditional scoring)
+  """
+
+
+  # two possible serving teams, and 0 can be a score so e.g. 12 possible scores
+  #  if the score_to_win is 11, which is why we add one
+
+
+  number_of_game_states = 2 * (score_to_win + 1) ** 2
+
+  transition_matrix = np.zeros((number_of_game_states,number_of_game_states))
+
+
+  # partitioning the list of game states
+  #
+  # for a game to 11 (i.e. 12 score states)
+  # the overall formula for position on the list is:
+  # (A_score + 48 * B_score) for A1 serving
+  #   + 12 for A2 serving
+  #   + 24 for B1 serving
+  #   + 36 for B2 serving
+  #
+  #
+
+
+  # find position in the matrix from score and server identity
+  def find_state(A_score, B_score, server):
+    return (A_score + B_score * (score_to_win+1)*2 + server * (score_to_win+1))
+    # server values are (0,1) for (A,B)
+
+  # note that there are four places where the score is 11-11 (which can't happen)
+  # I'll use two of those to respresent the "winning the game by two points" state, e.g. 12-10
+
+  # I'm keeping the score as (A score, B score, server) i.e. "A score" is always first here
+  # which is different than the way that a ref calls the score
+
+  def find_score_server(state, score_to_win):
+      B_score = state // ((score_to_win + 1) * 2)
+      remaining = state % ((score_to_win + 1) * 2)
+      server = remaining // (score_to_win + 1)
+      A_score = remaining % (score_to_win + 1)
+      return A_score, B_score, server
+
+
+  # fill in the transition matrix
+
+  for A_score in range(score_to_win): # e.g. 0->10
+    for B_score in range(score_to_win):
+
+      # Team A wins/loses a rally
+      transition_matrix[(find_state(A_score,B_score,0),find_state(A_score+1,B_score,0))]= p_win_A
+      transition_matrix[(find_state(A_score,B_score,0),find_state(A_score,B_score,1))]= (1-p_win_A)
+
+      # Team B wins/loses a rally
+      transition_matrix[(find_state(A_score,B_score,1),find_state(A_score,B_score+1,1))]= p_win_B
+      transition_matrix[(find_state(A_score,B_score,1),find_state(A_score,B_score,0))]= (1-p_win_B)
+
+ # set win states (at e.g. 11 points) to a value of "1" (stationary)
+    for score_B in range(score_to_win-1): # i.e. only up to a score of e.g. 9 in games to 11
+        transition_matrix[(find_state(score_to_win,score_B,0),find_state(score_to_win,score_B,0))]= 1
+    for score_A in range(score_to_win-1): # also only up to a score of e.g. 9
+        transition_matrix[(find_state(score_A,score_to_win,1),find_state(score_A,score_to_win,1))]= 1
+    # skip the score of e.g. 10, now catch the score of e.g 11-11:
+    transition_matrix[(find_state(score_to_win,score_to_win,0),find_state(score_to_win,score_to_win,0))]= 1
+    transition_matrix[(find_state(score_to_win,score_to_win,1),find_state(score_to_win,score_to_win,1))]= 1
+
+  # cases in 'win by 2' scenarios
+  # recall that the (11,11,_) states are used here for a win,
+  # and (10,10,_) represents all tie scores e.g. 13-13
+  # and e.g. the (10,11,_) states represent all advantage scores
+
+  # team A wins the game from 11-10
+  transition_matrix[ (find_state(score_to_win,score_to_win-1,0),find_state(score_to_win,score_to_win,0))] = p_win_A
+
+  # team A loses a rally at 11-10
+  transition_matrix[ (find_state(score_to_win,score_to_win-1,0),find_state(score_to_win,score_to_win-1,1))] = (1-p_win_A)
+
+  # team A wins a rally at 10-11, game reverts to the 10-10 state (tie game in win by 2 territory)
+  transition_matrix[ (find_state(score_to_win-1,score_to_win,0),find_state(score_to_win-1,score_to_win-1,0))] = p_win_A
+
+  ## team A loses a rally at 10-11
+  transition_matrix[ (find_state(score_to_win-1,score_to_win,0),find_state(score_to_win-1,score_to_win,1))] = (1-p_win_A)
+
+  # team B wins the game from 10-11
+  transition_matrix[ (find_state(score_to_win-1,score_to_win,1),find_state(score_to_win,score_to_win,1))] = p_win_B
+
+  # team B loses a rally at 10-11
+  transition_matrix[ (find_state(score_to_win-1,score_to_win,1),find_state(score_to_win-1,score_to_win,0))] = (1-p_win_B)
+
+  # team B wins a rally at 11-10, game reverts to the 10-10 state (tie game in win by 2 territory)
+  transition_matrix[ (find_state(score_to_win,score_to_win-1,1),find_state(score_to_win-1,score_to_win-1,1))] = p_win_B
+
+  # team B loses a rally at 11-10
+  transition_matrix[ (find_state(score_to_win,score_to_win-1,1),find_state(score_to_win,score_to_win-1,0))] = (1-p_win_B)
+
+
+  # settting up for running the sims
+  fraction_complete = [0]
+
+  # there might be a clever way to get to this using floor() and the transition matrix,
+  # but I'll just build it up
+  #
+  # I want a "1" in every "game over" state
+  fracion_complete_counting_tool = np.zeros(number_of_game_states)
+  for the_server in range(2):
+    for losing_score in range (score_to_win-1):
+      fracion_complete_counting_tool[find_state(score_to_win,losing_score,the_server)] = 1
+      fracion_complete_counting_tool[find_state(losing_score,score_to_win,the_server)] = 1
+
+  fracion_complete_counting_tool[find_state(score_to_win,score_to_win,0)] = 1
+  fracion_complete_counting_tool[find_state(score_to_win,score_to_win,1)] = 1
+
+  # initializing
+  outcomeMatrix = transition_matrix
+
+
+  # play out the rallys
+  for rally_number in range(n_rallys-1):
+    outcomeMatrix = np.matmul(transition_matrix,outcomeMatrix)
+    fraction_complete_so_far = np.matmul(fracion_complete_counting_tool,outcomeMatrix[find_state(0,0,0),:])
+    fraction_complete.append(fraction_complete_so_far)
+
+  # building up more tools
+  a_win_counter = np.zeros(number_of_game_states)
+  b_win_counter = np.zeros(number_of_game_states)
+  for the_server in range(2):
+    for losing_score in range (score_to_win-1):
+      a_win_counter[find_state(score_to_win,losing_score,the_server)] = 1
+      b_win_counter[find_state(losing_score,score_to_win,the_server)] = 1
+
+  a_win_counter[find_state(score_to_win,score_to_win,0)] = 1
+  a_win_counter[find_state(score_to_win,score_to_win,1)] = 1
+
+  a_wins = np.matmul(a_win_counter,outcomeMatrix[find_state(0,0,0),:])
+  b_wins = np.matmul(b_win_counter,outcomeMatrix[find_state(0,0,0),:])
+
+  differential_fraction_complete = [fraction_complete[0]] + [
+      fraction_complete[i] - fraction_complete[i - 1]
+      for i in range(1, len(fraction_complete))
+      ]
+  return a_wins, b_wins, a_wins + b_wins, differential_fraction_complete
