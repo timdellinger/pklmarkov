@@ -9,9 +9,7 @@ def traditional(
     show_fraction_finished: bool=False,
     starting_state: List[int]=[0,0,1],  # python counts from 0, so this is "002"
     track_score_until: int=11,
-    suppress_error_checking: bool=False
-) -> Tuple[float, Optional[List[float]], Optional[List[float]],Optional[str]]:
-
+) -> Tuple[float, float, Optional[List[float]], Optional[List[float]],Optional[str]]:
 
 
   """
@@ -20,34 +18,32 @@ def traditional(
   """
 
   # Error checking for input arguments
-  if not suppress_error_checking:
-    if not 0 <= p_win_A <= 1:
-      raise ValueError("p_win_A must be between 0 and 1")
-    if not 0 <= p_win_B <= 1:
-      raise ValueError("p_win_B must be between 0 and 1")
-    if not isinstance(score_to_win, int) or score_to_win <= 0:
-      raise ValueError("score_to_win must be an integer greater than 0")
-    if not isinstance(n_rallys, int) or n_rallys <= 0:
-      raise ValueError("n_rallys must be an integer greater than 0")
-    if not isinstance(win_by_one, bool):
-      raise ValueError("win_by_one must be a boolean")
-    if not isinstance(show_game_lengths, bool):
-      raise ValueError("show_game_lengths must be a boolean")
-    if not isinstance(show_game_scores, bool):
-      raise ValueError("show_game_scores must be a boolean")
-    if not isinstance(show_fraction_finished, bool):
-      raise ValueError("show_franction_finished must be a boolean")
-    if not isinstance(starting_state, list) or len(starting_state) != 3:
-      raise ValueError("count_from must be a list of three integers")
-    if not (0 <= starting_state[0] < score_to_win) or not (0 <= starting_state[1] < score_to_win):
-      raise ValueError("first two elements of starting_state must be integers in (0,score_to_win-1)")
-    if not (0 <= starting_state[3] <= 3):
-        raise ValueError("third element of starting_state must be an integer in (0,3)")
+  if not 0 <= p_win_A <= 1:
+    raise ValueError("p_win_A must be between 0 and 1")
+  if not 0 <= p_win_B <= 1:
+    raise ValueError("p_win_B must be between 0 and 1")
+  if not isinstance(score_to_win, int) or score_to_win <= 0:
+    raise ValueError("score_to_win must be an integer greater than 0")
+  if not isinstance(n_rallys, int) or n_rallys <= 0:
+    raise ValueError("n_rallys must be an integer greater than 0")
+  if not isinstance(win_by_one, bool):
+    raise ValueError("win_by_one must be a boolean")
+  if not isinstance(show_game_lengths, bool):
+    raise ValueError("show_game_lengths must be a boolean")
+  if not isinstance(show_game_scores, bool):
+    raise ValueError("show_game_scores must be a boolean")
+  if not isinstance(show_fraction_finished, bool):
+    raise ValueError("show_franction_finished must be a boolean")
+  if not isinstance(starting_state, list) or len(starting_state) != 3:
+    raise ValueError("count_from must be a list of three integers")
+  if not (0 <= starting_state[0] < score_to_win) or not (0 <= starting_state[1] < score_to_win):
+    raise ValueError("first two elements of starting_state must be integers in (0,score_to_win-1)")
+  if not (0 <= starting_state[2] <= 3):
+      raise ValueError("third element of starting_state must be an integer in (0,3)")
 
   # useful later
   # four possible servers, and 0 can be a score so e.g. 12 possible scores
   #  if the score_to_win is 11, which is why we add one
-
   number_of_game_states = 4 * (score_to_win + 1) ** 2
 
   # initialize to zeros
@@ -68,7 +64,6 @@ def traditional(
 
   # find position in the matrix from score and server identity
   # server runs 0 -> 3 for A1, A2, B1, B2
-
   def find_state(A_score, B_score, server):
     return (A_score + B_score * (score_to_win+1)*4 + server * (score_to_win+1))
 
@@ -79,6 +74,7 @@ def traditional(
   # which is different than the way that a ref calls the score
 
   # useful for debugging, else keep commented out
+  # this is the inverse of find_state()
   #
   # def find_score_server(state, score_to_win):
   #     B_score = state // ((score_to_win + 1) * 4)
@@ -180,8 +176,6 @@ def traditional(
       transition_matrix[(find_state(score_to_win-1,score_to_win,the_server),find_state(score_to_win-1,score_to_win,the_server))]= 1
      
 
-
-
   # code useful for debugging / verifivacation:
 
   # print(transition_matrix)
@@ -267,11 +261,18 @@ def traditional(
     b_win_counter[find_state(score_to_win-1,score_to_win,3)] = 1
   # now use the tools
   a_wins = np.matmul(a_win_counter,outcomeMatrix[starting_state_index,:])
-  b_wins = np.matmul(b_win_counter,outcomeMatrix[starting_state_index,:])
+  b_wins = np.matmul(b_win_counter,outcomeMatrix[starting_state_index,:]) 
 
+
+  return_values = [a_wins, b_wins]
+
+  if show_game_scores:
+    return_values.append(np.multiply(a_win_counter,outcomeMatrix[starting_state_index,:]))
+  if show_game_lengths:
+    return_values.append(differential_fraction_complete)
   if show_fraction_finished:
-   print (f'{a_wins+b_wins} is one in {1/(1-(a_wins+b_wins))} games unfinished after {n_rallys} rallys')  
+    return_values.append(f'{a_wins+b_wins} is one in {1/(1-(a_wins+b_wins))} games unfinished after {n_rallys} rallys')
 
-
-  return a_wins, b_wins 
+  return tuple(return_values)
+          
 
